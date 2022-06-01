@@ -1,0 +1,858 @@
+
+//This is th finalised hand tuned model as on March 19
+//contains 3 sections: soma, dendrite and AIS
+// contains 2 excitatory inputs CF and PF distributed unniformly on the dendritic tree
+// contains 11 active conductances. the conductances hve uniform density across the dendrites
+
+load_file("nrngui.hoc")
+nrncontrolmenu()
+
+tstop = 5000
+steps_per_ms = 20
+dt = 0.05
+
+
+// --------------------------------------------------------------
+// Resistances and Capacitances
+// --------------------------------------------------------------
+
+rm      = 18020.44 // hand tuned           
+                            
+ra      = 150
+Cm      = 1
+v_init  = -45
+celsius = 27
+
+
+
+// --------------------------------------------------------------
+// set passive conductances
+// --------------------------------------------------------------
+
+proc setpassive() {
+	
+    forall {
+	  	insert pas
+	  	e_pas = v_init
+        g_pas = 1/rm
+        cm = 1
+        Ra = ra
+		
+	}
+}
+
+// --------------------------------------------------------------
+// Reversal potentials
+// --------------------------------------------------------------
+
+
+Eh = -30
+
+// --------------------------------------------------------------
+// set initial conductance values
+// --------------------------------------------------------------
+/*NaF= fast sodium current
+NaP = persistant sodium current
+Khh= Hodgking and Huxely non inactivating potassium current
+Kir= potasium inward rectifier
+Ka= fast potassium current
+CaL= l type calcium current
+CaT= t type calcium current
+BK= big condutance calcium activated potassium current
+SK= smal conductance calcium activated potassium current
+HCN= hyperpolarisation activated mxed cation conductance
+*/
+
+gNaF    = 0.048
+gNaP    = 7e-6
+gKhh    = 0.011777
+gKir    = 0.000007
+gCaL    = 0.000033
+gBK     = 0.040813
+gSK     = 0.002323
+gHCN    = 0.000033
+gKhh_d  =0.001938
+gKa_d   =0.023020
+gKir_d  =0.000038
+gCaL_d  =0.000009
+gCaT_d  =0.000752
+gSK_d   =0.000099
+gBK_d   =0.000054
+gHCN_d  =0.000008
+gNaF_a  =16.994235
+gNaP_a  =0.000009
+gKhh_a  =0.202587
+
+
+// ------------------------------------------------------------------------
+// Set active conductances
+// Soma comprised of: NaF, NaP, Khh,Kir, CaL, BK, SK, HCN
+// Dendrite comprised of: Khh, Ka, Kir, Kerg, CaL, CaT, BK, SK, HCN
+// AIS comprised of: NaF, NaP, Khh
+// ------------------------------------------------------------------------
+
+create soma, dend[1], axon
+
+objref all, noaxon, dendritic, primary, secondary
+
+proc setactive() {
+    //print "I am Okay"
+    
+    soma {
+        insert NaF
+        gnabar_NaF=gNaF
+
+        insert NaP
+        gnabar_NaP=gNaP
+        
+        
+
+        insert Khh
+        gkbar_Khh=gKhh
+    
+        insert Kir             
+        gkbar_Kir=gKir
+
+	
+         insert BK              
+        gkbar_BK=gBK
+                
+        insert SK               
+        gkbar_SK=gSK
+        insert CaL
+        perm_CaL=gCaL
+
+        insert HCN
+        ghbar_HCN=gHCN
+
+//setting conductance values
+
+
+ena=40
+ek=-70
+    }
+forsec dendritic{
+    
+        insert Khh              
+        gkbar_Khh=gKhh_d
+
+        insert Ka               
+        gkbar_Ka=gKa_d
+        
+
+        insert Kir              
+        gkbar_Kir=gKir_d
+        
+        //insert Kerg             
+        //gbar_Kerg=gKerg_d
+
+
+        insert CaL              
+        perm_CaL=gCaL_d
+        
+        insert CaT             
+        pcabar_CaT=gCaT_d
+        
+        insert BK               
+        gkbar_BK=gBK_d
+        
+        insert SK               
+        gkbar_SK=gSK_d
+        
+        insert HCN              
+        ghbar_HCN=gHCN_d
+        
+        ek=-70
+
+}
+
+
+axon {
+    insert NaF
+    gnabar_NaF=gNaF_a
+
+
+    insert NaP
+    gnabar_NaP=gNaP_a
+    
+    insert Khh 
+    gkbar_Khh=gKhh_a
+
+        
+    
+        ena=40
+        ek=-70
+        
+    }
+    
+    forall if (ismembrane("HCN") ) eh_HCN=Eh
+        
+        
+}
+
+// --------------------------------------------------------------
+// calculate distance in microns with reference to soma
+// --------------------------------------------------------------
+
+proc init_cell() {
+
+	setpassive()
+    setactive()
+	
+	access soma	// Reinitializing distance origin
+	distance()
+	print "Number of compartments: ", totcomp
+    
+	//current_clamp()
+	//update_init()
+}
+
+proc load_3dcell() {
+    
+    forall delete_section()
+    xopen($s1)              // $s1 filename
+    
+    setpassive()
+
+    // The lambda constraint
+    
+    totcomp=0
+    forall {
+        soma area(0.5)
+        nseg = int((L/(0.1*lambda_f(100))+.9)/2)*2 + 1
+        totcomp=totcomp+nseg
+    }
+    
+    access soma
+    distance()
+
+    init_cell()
+
+    
+}
+
+access soma
+
+proc initsub() {
+    load_3dcell("7dpf_1.hoc")
+    finitialize(v_init)
+    fcurrent()
+}
+
+
+// --------------------------------------------------------------
+// calculate distance in microns with reference to soma
+// --------------------------------------------------------------
+
+somax=2.91
+somay=-9.14
+somaz=0
+
+double distances[1000]
+
+func raddist() {
+    distn0=distance(0)
+    distances[0]=0
+    sum=0
+    
+    for i=1,n3d()-1 {
+        xx=(x3d(i)-x3d(i-1))*(x3d(i)-x3d(i-1))
+        yy=(y3d(i)-y3d(i-1))*(y3d(i)-y3d(i-1))
+        zz=(z3d(i)-z3d(i-1))*(z3d(i)-z3d(i-1))
+        sum=sum+sqrt(xx+yy+zz)
+        distances[i]=sum
+    }
+    
+    xval=$1
+    
+    // Amoung the various pt3d's find which one matches the distance of current x closely
+    
+    distn=distance(xval)
+    match=distn-distn0
+    matchptdist=100000
+    for i=0,n3d()-1 {
+        matptdist=(match-distances[i])*(match-distances[i])
+        if(matchptdist>matptdist){
+            matchptdist=matptdist
+            matchi=i
+        }
+    }
+    
+    //print "Match for ", x, " is ", matchi, " XDIST ", match, " MATCH ", distances[matchi], " ERROR ", sqrt(matchptdist)
+    
+    
+    // Find the distance of the closely matched point to the somatic centroid and use that as the distance for this BPAP measurement
+    
+    xx=(x3d(matchi)-somax)*(x3d(matchi)-somax)
+    yy=(y3d(matchi)-somay)*(y3d(matchi)-somay)
+    zz=(z3d(matchi)-somaz)*(z3d(matchi)-somaz)
+    return sqrt(xx+yy+zz)
+}
+
+
+// --------------------------------------------------------------
+// save distances in microns
+// --------------------------------------------------------------
+
+objref f1
+proc save_distances () {
+    
+    f1=new File()
+    f1.wopen("PN_morph.dis")
+    
+    count=0
+    forsec noaxon {      //what should be trunk here, have to replace it with one section
+        for(x) {
+            if(x != 0 || count==0) { // x=0 distance is equal to x=1 of prev section
+                f1.printf("%s\t%f\t%f\n", secname(), x, raddist(x))
+                //print secname(), x, raddist(x)
+                
+            }
+        }
+        count=count+1
+    }
+    f1.close()
+}
+
+// --------------------------------------------------------------
+
+initsub()
+save_distances()
+
+//--------------------------------------------------------------
+// Update the process
+//--------------------------------------------------------------
+
+proc update_init() {
+    
+    finitialize(v_init)
+    fcurrent()
+   /* forall {
+     for (x) {
+     if (ismembrane("km") || ismembrane("kap")||ismembrane("kad")||ismembrane("hd")) {
+     e_pas(x)=v(x)+(ik(x)+i_hd(x))/g_pas(x)
+     //e_pas(x)=v(x)+(ina(x)+ik(x)+i_hd(x))/g_pas(x)
+     } else {
+     e_pas(x)=v(x)
+     }
+     }
+     }
+     */ 
+    
+}
+
+
+//--------------update conductance---------------//
+//values updated separately for soma, dendrite and AIS compartments//
+//-----------------for soma-------------------//
+
+proc update_gNaF() {
+    
+    gnabar_NaF=gNaF
+    update_init()
+}
+
+proc update_gNaP() {
+    
+    gnabar_NaP=gNaP
+    update_init()
+}
+
+proc update_gKhh() {
+    
+    gkbar_Khh=gKhh
+    update_init()
+}
+
+
+proc update_gKir() {
+    
+    gkbar_Kir=gKir
+    update_init()
+}
+
+proc update_gCaL() {
+    
+    perm_CaL=gCaL
+    update_init()
+}
+
+proc update_gBK() {
+    
+    gkbar_BK=gBK
+    update_init()
+}
+
+proc update_gSK() {
+    
+    gkbar_SK=gSK
+    update_init()
+}
+
+proc update_gHCN() {
+    
+    gkbar_HCN=gHCN
+    update_init()
+}
+
+//-----------------for dendrite-------------------//
+proc update_gKhh_d() {
+    
+    gkbar_Khh=gKhh_d
+    update_init()
+}
+
+proc update_gKa_d() {
+    
+    gkbar_Ka=gKa_d
+    update_init()
+}
+
+
+
+proc update_gKir_d() {
+    
+    gkbar_Kir=gKir_d
+    update_init()
+}
+
+proc update_gCaL_d() {
+    
+    perm_CaL=gCaL_d
+    update_init()
+}
+
+proc update_gCaT_d() {
+    
+    gcabar_CaT=gCaT_d
+    update_init()
+}
+proc update_gBK_d() {
+    
+    gkbar_BK=gBK_d
+    update_init()
+}
+
+proc update_gSK_d() {
+    
+    gkbar_SK=gSK_d
+    update_init()
+}
+
+proc update_gHCN_d() {
+    
+    ghbar_HCN=gHCN_d
+    update_init()
+}
+
+//-----------------for AIS-------------------//
+proc update_gNaF_a() {
+    
+    gnabar_NaF=gNaF_a
+    update_init()
+}
+
+proc update_gNaP_a() {
+    
+    gnabar_NaP=gNaP_a
+    update_init()
+}
+
+proc update_gKhh_a() {
+    
+    gkbar_Khh=gKhh_a
+    update_init()
+}
+
+//--------------update passive----------------//
+
+proc update_Rm(){
+    
+    forall {
+        
+        g_pas=1/rm     
+    }
+    update_init()
+    
+}
+
+proc update_Cm(){
+    
+    cm = Cm
+    update_init()
+}
+
+
+//-------------updating activation tau of all channels-----//
+
+proc update_tauNaFm() {
+    
+    naffacm_NaF=tauNaFm
+    update_init()
+}
+
+proc update_tauNaPm() {
+    
+    napfacm_NaP=tauNaPm
+    update_init()
+}
+
+proc update_tauKhhm() {
+    
+    khhfacm_Khh=tauKhhm
+    update_init()
+}
+
+proc update_tauKam() {
+    
+    kafacm_Ka=tauKam
+    update_init()
+}
+
+proc update_tauKirm() {
+    
+    kirfacm_Kir=tauKirm
+    update_init()
+}
+
+
+proc update_tauCaLm() {
+    
+    calfacm_CaL=tauCaLm
+    update_init()
+}
+
+proc update_tauCaTm() {
+    
+    catfacm_CaT=tauCaTm
+    update_init()
+}
+
+proc update_tauBKm() {
+    
+    bkfacm_BK=tauBKm
+    update_init()
+}
+
+proc update_tauSKm() {
+    
+    skfacm_SK=tauSKm
+    update_init()
+}
+
+proc update_tauHCNm() {
+    
+    hcnfacm_HCN=tauHCNm
+    update_init()
+}
+
+
+//-------------updating inactivation tau of all channels-----//
+
+proc update_tauNaFh() {
+    
+    naffach_NaF=tauNaFh
+    update_init()
+}
+
+
+proc update_tauKah() {
+    
+    kafach_Ka=tauKah
+    update_init()
+}
+
+
+
+proc update_tauCaTh() {
+    
+    catfach_CaT=tauCaTh
+    update_init()
+}
+
+//-------------update vhalf activation for all channels---------------//
+
+proc update_vhnafm() {
+    
+    vhnafm_NaF=vnafm
+    update_init()
+}
+
+proc update_vhnapm() {
+    
+    vhnapm_NaP=vnapm
+    update_init()
+}
+
+proc update_vhkhhm() {
+    
+    vhkhhm_Khh=vkhhm
+    update_init()
+    
+}
+
+proc update_vhkam() {
+    
+    vhkam_Ka=vkam
+    update_init()
+}
+
+proc update_vhkirm() {
+    
+    vhkirm_Kir=vkirm
+    update_init()
+}
+
+proc update_vhcalm() {
+    
+    vhcalm_CaL=vcalm
+    update_init()
+}
+
+proc update_vhcatm() {
+    
+    vhcatm_CaT=vcatm
+    update_init()
+}
+
+proc update_vhbkm() {
+    
+    vhbkm_BK=vbkm
+    update_init()
+}
+
+proc update_vhskm() {
+    
+    vhskm_SK=vskm
+    update_init()
+}
+
+proc update_vhhcnm() {
+    
+    vhhcnm_HCN=vhcnm
+    update_init()
+}
+
+
+//--------------update vhalf inactivation-------------------//
+
+proc update_vhnafh() {
+    
+    vhnafh_NaF=vnafh
+    update_init()
+}
+
+proc update_vhkah() {
+    
+    vhkah_Ka=vkah
+    update_init()
+    
+}
+
+
+proc update_vhcath() {
+    
+    vhcath_CaT=vcath
+    update_init()
+}
+
+//open parameter file for a model and assign new values from that//
+
+objref f24
+double param_value[46]
+
+proc update_param() {
+
+
+    f24=new File()
+    f24.ropen("Param_63.txt")
+        
+    for(i=0;i<=45;i+=1){
+        param_value[i]=f24.scanvar()
+        
+    } 
+
+    f24.close()
+
+
+
+
+        gNaF=param_value[0]
+        gNaP=param_value[1]
+        gKhh=param_value[2]
+        gKir=param_value[3]
+        gCaL=param_value[4]
+        print "first 5 done"
+        gBK=param_value[5]
+        gSK=param_value[6]
+        gHCN=param_value[7]
+        gKhh_d=param_value[8]
+        gKa_d=param_value[9]
+        print "first 10 done"
+        gKir_d=param_value[10]
+        gCaL_d=param_value[11]
+        gCaT_d=param_value[12]
+        gBK_d=param_value[13]
+        gSK_d=param_value[14]
+print "first 15 done"
+        gHCN_d=param_value[15]
+        gNaF_a=param_value[16]
+        gNaP_a=param_value[17]
+        gKhh_a=param_value[18]
+        tauNaFm=param_value[19]
+print "first 20 done"
+        tauNaPm=param_value[20]
+        tauKhhm=param_value[21]
+        tauKam=param_value[22]
+        tauKirm=param_value[23]
+        tauCaLm=param_value[24]
+print "first 25 done"
+        tauCaTm=param_value[25]
+        tauSKm=param_value[26]
+        tauBKm=param_value[27]
+        tauHCNm=param_value[28]
+        tauNaFh=param_value[29]
+print "first 30 done"
+        tauKah=param_value[30]
+        tauCaTh=param_value[31]
+        vnafm=param_value[32]
+        vnapm=param_value[33]
+        vkhhm=param_value[34]
+print "first 35 done"
+        vkam=param_value[35]
+        vkirm=param_value[36]
+        vcalm=param_value[37]
+        vcatm=param_value[38]
+        vbkm=param_value[39]
+print "first 40 done"
+        vskm=param_value[40]
+        vhcnm=param_value[41]
+        vnafh=param_value[42]
+        vkah=param_value[43] 
+        vcath=param_value[44]
+
+        rm=param_value[45]
+print "all done"
+
+
+//-------------------------------------------------------------------
+
+        soma {
+            
+            update_gNaF()
+            update_gNaP()
+            update_gKhh()
+            update_gKir()
+            update_gCaL()
+            update_gBK()
+            update_gSK()
+            update_gHCN()
+
+            update_tauNaFm()
+            update_tauNaPm()
+            update_tauKhhm()
+            update_tauKirm()
+            update_tauCaLm()
+            update_tauBKm()
+            update_tauSKm()
+            update_tauHCNm()
+            
+            update_tauNaFh()
+            
+            update_vhnafm()
+            update_vhnapm()
+            update_vhkhhm()
+            update_vhkirm()
+            update_vhcalm()
+            update_vhbkm()
+            update_vhskm()
+            update_vhhcnm()
+            
+            update_vhnafh()
+            
+        }
+        
+        
+        forsec dendritic {
+            
+            update_gKhh_d()
+            update_gKir_d()
+            update_gKa_d()
+            update_gCaL_d()
+            update_gCaT_d()
+            update_gBK_d()
+            update_gSK_d()
+            update_tauHCNm()
+            
+            update_tauKhhm()
+            update_tauKirm()
+            update_tauKam()
+            update_tauCaLm()
+            update_tauCaTm()
+            update_tauBKm()
+            update_tauSKm()
+            update_tauHCNm()
+            
+            update_tauKah()
+            update_tauCaTh()
+            
+            update_vhkhhm()
+            update_vhkirm()
+            update_vhkam()
+            update_vhcalm()
+            update_vhcatm()
+            update_vhbkm()
+            update_vhskm()
+            update_vhhcnm()
+            
+            update_vhkah()
+            update_vhcath()
+        }
+
+    axon {
+
+        update_gNaF_a()
+        update_gNaP_a()
+        update_gKhh_a()
+
+        update_tauNaFm()
+        update_tauNaPm()
+        update_tauKhhm()
+
+        update_tauNaFh()
+            
+        update_vhnafm()
+        update_vhnapm()
+        update_vhkhhm()
+
+        update_vhnafh()
+    }
+     
+
+    forall {
+
+    update_Rm()
+
+        }
+
+
+
+       
+    }
+        
+        
+        
+        
+        //r_input()
+        
+      
+        
+ 
+//------------------function to run the whole thing---------------//
+
+init_cell()
+update_param()
+//cfinput()
+//pfinput()
+
+
